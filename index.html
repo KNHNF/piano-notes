@@ -1,0 +1,726 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Piano Notes</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 24px; background: #14141a; color: #eee; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 10px; color: #ccc; }
+  p.sub { color: #999; margin: 0 0 20px; font-size: 14px; }
+  .panel { background: #1e1e28; border: 1px solid #33333f; border-radius: 10px; padding: 16px; margin-bottom: 18px; max-width: 900px; }
+  label { display: block; font-size: 13px; color: #aaa; margin-bottom: 6px; }
+  input, button, textarea, select { font-size: 15px; padding: 8px 10px; border-radius: 6px; border: 1px solid #444; background: #2a2a36; color: #eee; }
+  input#seq, textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; }
+  textarea { min-height: 110px; resize: vertical; line-height: 1.5; }
+  button { cursor: pointer; background: #3a6df0; border: none; }
+  button:hover { background: #2f5bd0; }
+  button.ghost { background: #2a2a36; border: 1px solid #444; }
+  .row { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-top: 10px; }
+  .keyboard { position: relative; height: 180px; user-select: none; max-width: 900px; overflow-x: auto; white-space: nowrap; }
+  .white { position: relative; display: inline-block; width: 46px; height: 180px; background: #fafafa; border: 1px solid #888; border-radius: 0 0 5px 5px; box-sizing: border-box; vertical-align: top; }
+  .white:active, .white.on { background: #cdd8ff; }
+  .white.on-l { background: #ffd9c2; }
+  .white span { position: absolute; bottom: 6px; width: 100%; text-align: center; font-size: 11px; color: #666; }
+  .black { position: absolute; top: 0; width: 30px; height: 112px; background: #222; border: 1px solid #000; border-radius: 0 0 4px 4px; z-index: 2; margin-left: -15px; }
+  .black:active, .black.on { background: #3a6df0; }
+  .black.on-l { background: #e07030; }
+  .fingerbadge { position: absolute; top: -22px; left: 50%; transform: translateX(-50%); background: #3a6df0; color: #fff; font-size: 12px; font-weight: 700; border-radius: 50%; width: 20px; height: 20px; line-height: 20px; text-align: center; z-index: 5; }
+  .fingerbadge.lh { background: #e07030; }
+  .keyboard-wrap { padding-top: 24px; }
+  .hint { font-size: 12px; color: #888; margin-top: 8px; }
+  code { background: #2a2a36; padding: 1px 5px; border-radius: 4px; }
+  /* Sheet rendering: engraved staff on a paper-like card */
+  .sheet { overflow-x: auto; margin-top: 12px; background: #fdfbf5; border-radius: 8px; padding: 10px 0; }
+  .sheet svg { display: block; }
+  .sheet .staffline, .sheet .barline, .sheet .ledger { stroke: #222; }
+  .sheet .stem { stroke: #111; stroke-width: 1.6; }
+  .sheet .nh { fill: #111; }
+  .sheet .clef, .sheet .restglyph, .sheet .acc { fill: #111; }
+  .sheet .fingnum { font: 700 12px system-ui, sans-serif; fill: #2f5bd0; }
+  .sheet .fingnum.lh { fill: #c05a1a; }
+  .sheet .sn.current .nh { fill: #2f5bd0; }
+  .sheet .sn.current .stem { stroke: #2f5bd0; }
+  .sheet .sn.current .acc { fill: #2f5bd0; }
+  .sheet .sn.lh.current .nh { fill: #c05a1a; }
+  .sheet .sn.lh.current .stem { stroke: #c05a1a; }
+  .sheet .sn.lh.current .acc { fill: #c05a1a; }
+</style>
+</head>
+<body>
+  <h1>Piano Notes</h1>
+  <p class="sub">Click a key, press a computer key, type a quick sequence, or write a full sheet with left and right hands. Finger numbers are worked out for you. Nothing to install, works offline.</p>
+
+  <div class="panel">
+    <h2>Sheet (right and left hand)</h2>
+    <label for="sheetin">One bar per <code>|</code>. Prefix a line with <code>R:</code> (right hand) or <code>L:</code> (left hand). Use <code>-</code> for a rest, <code>~</code> to hold the previous note.</label>
+    <textarea id="sheetin" spellcheck="false">R: C4 D4 E4 F4 | G4 F4 E4 D4 | C4 E4 G4 C5 | C5 ~ - -
+L: C3 - G3 - | C3 - G3 - | C3 - E3 G3 | C3 ~ - -</textarea>
+    <div class="row">
+      <div>
+        <label for="bpm">Tempo (BPM)</label>
+        <input id="bpm" type="number" value="90" min="30" max="240" style="width:90px">
+      </div>
+      <div>
+        <label for="tsig">Time signature</label>
+        <select id="tsig" onchange="renderSheet()">
+          <option value="4/4" selected>4/4</option>
+          <option value="3/4">3/4</option>
+          <option value="2/4">2/4</option>
+          <option value="6/8">6/8</option>
+        </select>
+      </div>
+      <div>
+        <label for="voice">Piano sound</label>
+        <select id="voice">
+          <option value="grand" selected>Grand piano (warm)</option>
+          <option value="upright">Upright piano</option>
+          <option value="bright">Bright piano</option>
+          <option value="electric">Electric piano</option>
+          <option value="music_box">Music box</option>
+          <option value="organ">Organ</option>
+        </select>
+      </div>
+      <button onclick="renderSheet(); playSheet()">Play sheet</button>
+      <button class="ghost" onclick="renderSheet()">Show fingering</button>
+      <button class="ghost" onclick="stopAll()">Stop</button>
+    </div>
+    <div class="row">
+      <input id="sheetname" placeholder="Sheet name" style="width:180px">
+      <button class="ghost" onclick="saveSheet()">Save in browser</button>
+      <select id="saved" onchange="loadSaved()"><option value="">Saved sheets...</option></select>
+      <button class="ghost" onclick="deleteSaved()">Delete</button>
+      <button class="ghost" onclick="downloadSheet()">Download file</button>
+      <label style="margin:0"><input type="file" id="fileload" accept=".txt,.json,.xml,.musicxml" style="display:none" onchange="loadFile(event)">
+        <button class="ghost" onclick="document.getElementById('fileload').click()">Load file</button></label>
+    </div>
+    <div class="sheet" id="sheetview"></div>
+    <div class="hint">Finger numbers: 1 = thumb to 5 = little finger, for each hand. Blue = right hand, orange = left hand. They are a sensible suggestion from note direction and span, not gospel; adjust to what your teacher says.</div>
+    <div class="hint">Load file accepts saved sheets (<code>.json</code> / <code>.txt</code>) and MusicXML (<code>.xml</code> / <code>.musicxml</code>, uncompressed). For paper sheet music: scan it with the free <a href="https://github.com/Audiveris/audiveris" style="color:#7da2ff">Audiveris</a> app, export as uncompressed MusicXML, load it here.</div>
+  </div>
+
+  <div class="panel">
+    <label for="seq">Quick sequence (note names, space or comma separated). Octave optional, defaults to 4.</label>
+    <input id="seq" value="C D E F G A B C5" spellcheck="false">
+    <div class="row">
+      <button onclick="playSequence()">Play sequence</button>
+      <button class="ghost" onclick="stopAll()">Stop</button>
+    </div>
+    <div class="hint">Examples: <code>C D E F G</code> or <code>C4 E4 G4 C5</code> or <code>A3 C#4 E4</code>. Sharps use <code>#</code>, flats use <code>b</code> (e.g. <code>Bb4</code>).</div>
+  </div>
+
+  <div class="panel">
+    <div class="keyboard-wrap"><div class="keyboard" id="kb"></div></div>
+    <div class="hint">Computer keys (middle octave): <code>a w s e d f t g y h u j</code> = C C# D D# E F F# G G# A A# B</div>
+  </div>
+
+<script>
+const ctx = new (window.AudioContext || window.webkitAudioContext)();
+let liveNodes = [];
+let stepTimers = [];
+
+function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+
+const SEMI = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
+function noteToMidi(name) {
+  const m = String(name).trim().toUpperCase().match(/^([A-G])([#B]?)(-?\d+)?$/);
+  if (!m) return null;
+  let s = SEMI[m[1]];
+  if (m[2] === '#') s += 1;
+  if (m[2] === 'B') s -= 1;
+  const oct = m[3] !== undefined ? parseInt(m[3], 10) : 4;
+  return s + (oct + 1) * 12;
+}
+
+// Instrument presets for the additive synth.
+// harmonics: [multiple, gain]; attack in s; decay: gain multiplier curve feel;
+// detune: cents spread between two slightly offset strings (piano chorus);
+// inharm: stretch factor for upper partials (real strings are stiff);
+// hammer: level of filtered noise at the attack; trem: tremolo Hz (0 = off).
+const VOICES = {
+  grand: {
+    harmonics: [[1, 1.0], [2, 0.55], [3, 0.32], [4, 0.18], [5, 0.09], [6, 0.05], [8, 0.02]],
+    attack: 0.004, release: 1.4, detune: 3, inharm: 0.0004, hammer: 0.25, trem: 0, sustainLevel: 0.12
+  },
+  upright: {
+    harmonics: [[1, 1.0], [2, 0.62], [3, 0.40], [4, 0.24], [5, 0.14], [7, 0.06]],
+    attack: 0.003, release: 1.0, detune: 6, inharm: 0.0008, hammer: 0.4, trem: 0, sustainLevel: 0.10
+  },
+  bright: {
+    harmonics: [[1, 1.0], [2, 0.35], [3, 0.15], [4, 0.07]],
+    attack: 0.005, release: 0.9, detune: 0, inharm: 0, hammer: 0, trem: 0, sustainLevel: 0.08
+  },
+  electric: {
+    harmonics: [[1, 1.0], [2, 0.08], [3, 0.25], [4, 0.03], [5, 0.06]],
+    attack: 0.002, release: 1.2, detune: 0, inharm: 0, hammer: 0.08, trem: 5.5, sustainLevel: 0.15
+  },
+  music_box: {
+    harmonics: [[1, 1.0], [3, 0.30], [5, 0.12], [7, 0.05]],
+    attack: 0.001, release: 1.8, detune: 0, inharm: 0.002, hammer: 0.12, trem: 0, sustainLevel: 0.05, octaveUp: true
+  },
+  organ: {
+    harmonics: [[0.5, 0.5], [1, 1.0], [2, 0.6], [3, 0.4], [4, 0.3], [6, 0.15]],
+    attack: 0.03, release: 0.15, detune: 2, inharm: 0, hammer: 0, trem: 0, sustainLevel: 0.9, sustained: true
+  }
+};
+function currentVoice() {
+  const sel = document.getElementById('voice');
+  return VOICES[sel ? sel.value : 'grand'] || VOICES.grand;
+}
+
+function playFreq(freq, when, dur) {
+  when = when || ctx.currentTime;
+  dur = dur || 0.9;
+  const v = currentVoice();
+  if (v.octaveUp) freq *= 2;
+  const master = ctx.createGain();
+  master.connect(ctx.destination);
+  const peak = 0.4;
+  master.gain.setValueAtTime(0.0001, when);
+  master.gain.exponentialRampToValueAtTime(peak, when + v.attack);
+  if (v.sustained) {
+    master.gain.setValueAtTime(peak, when + Math.max(v.attack, dur - 0.03));
+    master.gain.exponentialRampToValueAtTime(0.0001, when + dur + v.release);
+  } else {
+    // struck string: fast initial decay to a singing tail, then die away
+    master.gain.exponentialRampToValueAtTime(peak * v.sustainLevel, when + Math.min(dur * 0.7, v.release * 0.5));
+    master.gain.exponentialRampToValueAtTime(0.0001, when + dur + v.release * 0.4);
+  }
+  const stopAt = when + dur + (v.sustained ? v.release : v.release * 0.4) + 0.05;
+  const detunes = v.detune ? [-v.detune, v.detune] : [0];
+  v.harmonics.forEach(([mult, g]) => {
+    // higher partials of a stiff string run slightly sharp and die faster
+    const f = freq * mult * (1 + v.inharm * mult * mult);
+    if (f > 12000) return;
+    detunes.forEach(cents => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = f;
+      osc.detune.value = cents;
+      const hg = ctx.createGain();
+      hg.gain.setValueAtTime(g / detunes.length, when);
+      if (!v.sustained && mult > 1)
+        hg.gain.exponentialRampToValueAtTime(Math.max(0.0001, g / detunes.length / (mult * 2)), when + 0.6);
+      osc.connect(hg); hg.connect(master);
+      osc.start(when);
+      osc.stop(stopAt);
+      liveNodes.push(osc);
+    });
+  });
+  // hammer thump: a short burst of low-passed noise
+  if (v.hammer) {
+    const len = Math.floor(ctx.sampleRate * 0.03);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = Math.min(8000, freq * 6);
+    const ng = ctx.createGain();
+    ng.gain.value = v.hammer * 0.5;
+    src.connect(lp); lp.connect(ng); ng.connect(master);
+    src.start(when);
+    liveNodes.push(src);
+  }
+  // tremolo for electric piano
+  if (v.trem) {
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = v.trem;
+    const lg = ctx.createGain();
+    lg.gain.value = peak * 0.25;
+    lfo.connect(lg); lg.connect(master.gain);
+    lfo.start(when);
+    lfo.stop(stopAt);
+    liveNodes.push(lfo);
+  }
+}
+
+function playMidi(m) {
+  if (ctx.state === 'suspended') ctx.resume();
+  if (m == null) return;
+  playFreq(midiToFreq(m));
+}
+
+function stopAll() {
+  liveNodes.forEach(n => { try { n.stop(); } catch (e) {} });
+  liveNodes = [];
+  stepTimers.forEach(t => clearTimeout(t));
+  stepTimers = [];
+  stopAllVisual();
+}
+
+function getBpm() {
+  return Math.max(30, Math.min(240, parseInt(document.getElementById('bpm').value, 10) || 90));
+}
+
+function playSequence() {
+  if (ctx.state === 'suspended') ctx.resume();
+  stopAll();
+  const tokens = document.getElementById('seq').value.split(/[\s,]+/).filter(Boolean);
+  const beat = 60 / getBpm();
+  let t = ctx.currentTime + 0.05;
+  tokens.forEach(tok => {
+    const m = noteToMidi(tok);
+    if (m != null) {
+      playFreq(midiToFreq(m), t, beat * 0.95);
+      const delay = (t - ctx.currentTime) * 1000;
+      stepTimers.push(setTimeout(() => flashKey(m), delay));
+    }
+    t += beat;
+  });
+}
+
+// ---------- Sheet parsing ----------
+// Returns { hands: { R: steps[], L: steps[] }, length }
+// step = { type:'note', name, midi, hold } | { type:'rest' }
+function parseSheet(text) {
+  const hands = { R: [], L: [] };
+  text.split(/\r?\n/).forEach(line => {
+    line = line.trim();
+    if (!line) return;
+    let hand = 'R';
+    const hm = line.match(/^([RL])\s*:\s*(.*)$/i);
+    let body = line;
+    if (hm) { hand = hm[1].toUpperCase(); body = hm[2]; }
+    body.split('|').forEach(bar => {
+      const toks = bar.trim().split(/[\s,]+/).filter(Boolean);
+      toks.forEach(tok => {
+        if (tok === '-') { hands[hand].push({ type: 'rest' }); }
+        else if (tok === '~') { hands[hand].push({ type: 'hold' }); }
+        else {
+          const midi = noteToMidi(tok);
+          hands[hand].push(midi == null ? { type: 'rest', bad: tok } : { type: 'note', name: tok.toUpperCase(), midi });
+        }
+      });
+    });
+  });
+  const length = Math.max(hands.R.length, hands.L.length);
+  return { hands, length };
+}
+
+// ---------- Fingering ----------
+// Simple heuristic per hand. RH: thumb=1 low side; LH: thumb=1 high side.
+// Walk the note list, assign fingers from interval size, reset with thumb-under
+// or finger-over when we run off the hand.
+function assignFingers(steps, hand) {
+  const notes = [];
+  steps.forEach((s, i) => { if (s.type === 'note') notes.push({ i, midi: s.midi }); });
+  if (!notes.length) return;
+  const dir = hand === 'R' ? 1 : -1; // finger number grows as pitch rises (RH) or falls (LH)
+  let finger = notes.length > 1 && (notes[1].midi - notes[0].midi) * dir < 0 ? 5 : 1;
+  steps[notes[0].i].finger = finger;
+  for (let k = 1; k < notes.length; k++) {
+    const semis = (notes[k].midi - notes[k - 1].midi) * dir; // + means towards finger 5
+    let stepF;
+    if (semis === 0) stepF = 0;
+    else {
+      const mag = Math.abs(semis);
+      stepF = (mag <= 2 ? 1 : mag <= 4 ? 2 : mag <= 7 ? 3 : 4) * Math.sign(semis);
+    }
+    let next = finger + stepF;
+    if (next > 5) next = semis > 7 ? 5 : 1;   // big leap: reach with 5, else thumb under
+    if (next < 1) next = semis < -7 ? 1 : 3;  // crossing back over the thumb
+    finger = next;
+    steps[notes[k].i].finger = finger;
+  }
+}
+
+// ---------- Sheet rendering (engraved grand staff, SVG) ----------
+let currentParsed = null;
+const SVGNS = 'http://www.w3.org/2000/svg';
+const LSP = 10;          // staff line spacing
+const HALF = LSP / 2;    // one diatonic step
+const STEP_W = 46;       // horizontal space per beat
+const X0 = 104;          // first note x (after clef and time signature)
+const TREB_TOP = 34;     // y of treble top line (F5)
+const BASS_TOP = 128;    // y of bass top line (A3)
+
+const LETTER_IDX = { C:0, D:1, E:2, F:3, G:4, A:5, B:6 };
+// diatonic index from a note name like C#4 or Bb3
+function diatonic(name) {
+  const m = String(name).toUpperCase().match(/^([A-G])([#B]?)(-?\d+)$/);
+  if (!m) return null;
+  return { d: parseInt(m[3], 10) * 7 + LETTER_IDX[m[1]], acc: m[2] };
+}
+// y position on the grand staff; treble top line F5 diat=38, bass top line A3 diat=26
+function staffY(diat, hand) {
+  return hand === 'R' ? TREB_TOP + (38 - diat) * HALF : BASS_TOP + (26 - diat) * HALF;
+}
+
+function el(name, attrs, parent) {
+  const e = document.createElementNS(SVGNS, name);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+
+function renderSheet() {
+  const text = document.getElementById('sheetin').value;
+  currentParsed = parseSheet(text);
+  assignFingers(currentParsed.hands.R, 'R');
+  assignFingers(currentParsed.hands.L, 'L');
+  const view = document.getElementById('sheetview');
+  view.innerHTML = '';
+  const n = currentParsed.length;
+  if (!n) return;
+  const width = X0 + n * STEP_W + 20;
+  const height = 210;
+  const svg = el('svg', { width, height, viewBox: '0 0 ' + width + ' ' + height });
+  view.appendChild(svg);
+
+  // staff lines
+  const endX = X0 + n * STEP_W;
+  for (let i = 0; i < 5; i++) {
+    el('line', { class: 'staffline', x1: 14, y1: TREB_TOP + i * LSP, x2: endX, y2: TREB_TOP + i * LSP, 'stroke-width': 1 }, svg);
+    el('line', { class: 'staffline', x1: 14, y1: BASS_TOP + i * LSP, x2: endX, y2: BASS_TOP + i * LSP, 'stroke-width': 1 }, svg);
+  }
+  // system brace line joining the staves, and clefs
+  el('line', { class: 'barline', x1: 14, y1: TREB_TOP, x2: 14, y2: BASS_TOP + 4 * LSP, 'stroke-width': 2 }, svg);
+  const treb = el('text', { class: 'clef', x: 20, y: TREB_TOP + 3 * LSP + 4, 'font-size': 64 }, svg);
+  treb.textContent = '\u{1D11E}';
+  const bass = el('text', { class: 'clef', x: 22, y: BASS_TOP + 3 * LSP + 2, 'font-size': 44 }, svg);
+  bass.textContent = '\u{1D122}';
+
+  // time signature after each clef
+  const tsig = document.getElementById('tsig').value;
+  const [tsNum, tsDen] = tsig.split('/').map(Number);
+  [TREB_TOP, BASS_TOP].forEach(top => {
+    const num = el('text', { class: 'clef', x: 74, y: top + 2 * LSP - 2, 'font-size': 22, 'font-weight': 700, 'text-anchor': 'middle', 'font-family': 'serif' }, svg);
+    num.textContent = tsNum;
+    const den = el('text', { class: 'clef', x: 74, y: top + 4 * LSP - 2, 'font-size': 22, 'font-weight': 700, 'text-anchor': 'middle', 'font-family': 'serif' }, svg);
+    den.textContent = tsDen;
+  });
+
+  // bar lines every tsNum beats
+  for (let b = tsNum; b <= n; b += tsNum) {
+    const x = X0 + b * STEP_W - STEP_W / 2 + 8;
+    el('line', { class: 'barline', x1: x, y1: TREB_TOP, x2: x, y2: TREB_TOP + 4 * LSP, 'stroke-width': b === n ? 2.5 : 1 }, svg);
+    el('line', { class: 'barline', x1: x, y1: BASS_TOP, x2: x, y2: BASS_TOP + 4 * LSP, 'stroke-width': b === n ? 2.5 : 1 }, svg);
+  }
+
+  ['R', 'L'].forEach(hand => {
+    const steps = currentParsed.hands[hand];
+    const top = hand === 'R' ? TREB_TOP : BASS_TOP;
+    const midY = top + 2 * LSP;
+    steps.forEach((s, i) => {
+      const x = X0 + i * STEP_W;
+      if (s.type === 'rest') {
+        if (!s.bad) {
+          const r = el('text', { class: 'restglyph', x: x - 5, y: midY + 6, 'font-size': 30 }, svg);
+          r.textContent = '\u{1D13D}';
+        }
+        return;
+      }
+      if (s.type === 'hold') return; // sounding note continues; no new head
+      const dt = diatonic(s.name);
+      if (!dt) return;
+      const y = staffY(dt.d, hand);
+      const g = el('g', { class: 'sn' + (hand === 'L' ? ' lh' : ''), 'data-hand': hand, 'data-idx': i }, svg);
+      // ledger lines
+      const topY = top, botY = top + 4 * LSP;
+      for (let ly = topY - LSP; ly >= y; ly -= LSP)
+        el('line', { class: 'ledger', x1: x - 9, y1: ly, x2: x + 9, y2: ly, 'stroke-width': 1 }, g);
+      for (let ly = botY + LSP; ly <= y; ly += LSP)
+        el('line', { class: 'ledger', x1: x - 9, y1: ly, x2: x + 9, y2: ly, 'stroke-width': 1 }, g);
+      // accidental
+      if (dt.acc) {
+        const a = el('text', { class: 'acc', x: x - 17, y: y + 5, 'font-size': 17 }, g);
+        a.textContent = dt.acc === '#' ? '♯' : '♭';
+      }
+      // note head (filled quarter, slightly tilted)
+      el('ellipse', { class: 'nh', cx: x, cy: y, rx: 6, ry: 4.6, transform: 'rotate(-18 ' + x + ' ' + y + ')' }, g);
+      // stem: down if on or above middle line, else up
+      if (y <= midY) el('line', { class: 'stem', x1: x - 5.6, y1: y + 2, x2: x - 5.6, y2: y + 30 }, g);
+      else el('line', { class: 'stem', x1: x + 5.6, y1: y - 2, x2: x + 5.6, y2: y - 30 }, g);
+      // finger number above treble, below bass
+      if (s.finger) {
+        const fy = hand === 'R' ? Math.min(y - 36, topY - 8) : Math.max(y + 42, botY + 16);
+        const f = el('text', { class: 'fingnum' + (hand === 'L' ? ' lh' : ''), x: x - 3, y: fy }, g);
+        f.textContent = s.finger;
+      }
+    });
+  });
+}
+
+function playSheet() {
+  if (ctx.state === 'suspended') ctx.resume();
+  stopAll();
+  if (!currentParsed) renderSheet();
+  const p = currentParsed;
+  const beat = 60 / getBpm();
+  const t0 = ctx.currentTime + 0.1;
+  const wall0 = performance.now() + 100;
+  for (let i = 0; i < p.length; i++) {
+    ['R', 'L'].forEach(hand => {
+      const s = p.hands[hand][i];
+      if (!s) return;
+      if (s.type === 'note') {
+        // extend duration through following holds
+        let dur = beat;
+        let j = i + 1;
+        while (p.hands[hand][j] && p.hands[hand][j].type === 'hold') { dur += beat; j++; }
+        playFreq(midiToFreq(s.midi), t0 + i * beat, dur * 0.95);
+      }
+    });
+    stepTimers.push(setTimeout(() => highlightStep(i), wall0 + i * beat * 1000 - performance.now()));
+  }
+  stepTimers.push(setTimeout(() => stopAllVisual(), wall0 + p.length * beat * 1000 - performance.now()));
+}
+
+function stopAllVisual() {
+  document.querySelectorAll('.sn.current').forEach(c => c.classList.remove('current'));
+  document.querySelectorAll('.fingerbadge').forEach(b => b.remove());
+}
+
+function highlightStep(i) {
+  stopAllVisual();
+  document.querySelectorAll('.sn[data-idx="' + i + '"]').forEach(c => c.classList.add('current'));
+  ['R', 'L'].forEach(hand => {
+    const s = currentParsed.hands[hand][i];
+    if (s && s.type === 'note') flashKey(s.midi, hand, s.finger);
+  });
+  const sheet = document.querySelector('.sheet');
+  if (sheet) sheet.scrollLeft = Math.max(0, X0 + i * STEP_W - sheet.clientWidth / 2);
+}
+
+// ---------- MusicXML import ----------
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+function midiName(m) { return NOTE_NAMES[m % 12] + (Math.floor(m / 12) - 1); }
+
+const MAX_IMPORT_BEATS = 512;
+
+// Reads the first part of a score-partwise document. Staff 1 goes to the right
+// hand, staff 2 to the left. Chords are collapsed to one note per hand
+// (highest for RH, lowest for LH). Durations are quantised to whole beats.
+function importMusicXML(text) {
+  const doc = new DOMParser().parseFromString(text, 'application/xml');
+  if (doc.querySelector('parsererror')) throw new Error('Not valid XML.');
+  const part = doc.querySelector('score-partwise > part, part');
+  if (!part) throw new Error('No <part> found. Compressed .mxl files must be exported as uncompressed MusicXML.');
+  let div = 1;               // divisions per quarter note
+  let t = 0;                 // cursor in beats
+  let lastStart = 0;         // start of the previous note, for chords
+  let tsig = null;
+  const grids = { R: [], L: [] };
+
+  function place(staffKey, startBeat, beats, midi) {
+    const idx = Math.round(startBeat);
+    if (idx < 0 || idx >= MAX_IMPORT_BEATS) return;
+    const g = grids[staffKey];
+    const cell = g[idx];
+    if (cell) {
+      // chord collision: RH keeps the top note, LH the bottom
+      const keepNew = staffKey === 'R' ? midi > cell.midi : midi < cell.midi;
+      if (!keepNew) return;
+    }
+    g[idx] = { midi, beats: Math.max(1, Math.round(beats)) };
+  }
+
+  part.querySelectorAll(':scope > measure').forEach(measure => {
+    for (const node of measure.children) {
+      const tag = node.tagName;
+      if (tag === 'attributes') {
+        const d = node.querySelector('divisions');
+        if (d) div = parseFloat(d.textContent) || div;
+        const beats = node.querySelector('time > beats');
+        const beatType = node.querySelector('time > beat-type');
+        if (beats && beatType) tsig = beats.textContent.trim() + '/' + beatType.textContent.trim();
+      } else if (tag === 'backup') {
+        t -= (parseFloat(node.querySelector('duration')?.textContent) || 0) / div;
+      } else if (tag === 'forward') {
+        t += (parseFloat(node.querySelector('duration')?.textContent) || 0) / div;
+      } else if (tag === 'note') {
+        const durEl = node.querySelector(':scope > duration');
+        if (!durEl) continue; // grace note
+        const dur = (parseFloat(durEl.textContent) || 0) / div;
+        const isChord = !!node.querySelector(':scope > chord');
+        const start = isChord ? lastStart : t;
+        if (!isChord) { lastStart = t; t += dur; }
+        if (node.querySelector(':scope > rest')) continue;
+        const pitch = node.querySelector(':scope > pitch');
+        if (!pitch) continue;
+        const step = pitch.querySelector('step').textContent.trim().toUpperCase();
+        const alter = parseInt(pitch.querySelector('alter')?.textContent || '0', 10);
+        const oct = parseInt(pitch.querySelector('octave').textContent, 10);
+        const midi = SEMI[step] + alter + (oct + 1) * 12;
+        const staff = node.querySelector(':scope > staff')?.textContent.trim() || '1';
+        place(staff === '2' ? 'L' : 'R', start, dur, midi);
+      }
+    }
+  });
+
+  const total = Math.min(MAX_IMPORT_BEATS,
+    Math.max(grids.R.length, grids.L.length));
+  if (!total) throw new Error('No notes found in the file.');
+  if (tsig && document.querySelector('#tsig option[value="' + tsig + '"]'))
+    document.getElementById('tsig').value = tsig;
+  const perBar = parseInt(document.getElementById('tsig').value.split('/')[0], 10) || 4;
+  return gridsToText(grids, total, perBar);
+}
+
+function gridsToText(grids, total, perBar) {
+  const lines = [];
+  ['R', 'L'].forEach(hand => {
+    const g = grids[hand];
+    if (!g.some(Boolean)) return;
+    const toks = new Array(total).fill('-');
+    for (let i = 0; i < total; i++) {
+      const cell = g[i];
+      if (!cell) continue;
+      toks[i] = midiName(cell.midi);
+      for (let k = 1; k < cell.beats && i + k < total; k++)
+        if (!g[i + k]) toks[i + k] = '~';
+    }
+    const bars = [];
+    for (let b = 0; b < total; b += perBar) bars.push(toks.slice(b, b + perBar).join(' '));
+    lines.push(hand + ': ' + bars.join(' | '));
+  });
+  return lines.join('\n');
+}
+
+// ---------- Save / load ----------
+const LS_KEY = 'piano-sheets';
+function getStore() { try { return JSON.parse(localStorage.getItem(LS_KEY)) || {}; } catch (e) { return {}; } }
+function refreshSavedList() {
+  const sel = document.getElementById('saved');
+  const store = getStore();
+  sel.innerHTML = '<option value="">Saved sheets...</option>';
+  Object.keys(store).sort().forEach(name => {
+    const o = document.createElement('option');
+    o.value = name; o.textContent = name;
+    sel.appendChild(o);
+  });
+}
+function saveSheet() {
+  const name = document.getElementById('sheetname').value.trim();
+  if (!name) { alert('Give the sheet a name first.'); return; }
+  const store = getStore();
+  store[name] = { text: document.getElementById('sheetin').value, bpm: getBpm(), voice: document.getElementById('voice').value, tsig: document.getElementById('tsig').value };
+  localStorage.setItem(LS_KEY, JSON.stringify(store));
+  refreshSavedList();
+  document.getElementById('saved').value = name;
+}
+function loadSaved() {
+  const name = document.getElementById('saved').value;
+  if (!name) return;
+  const s = getStore()[name];
+  if (!s) return;
+  document.getElementById('sheetin').value = s.text;
+  if (s.bpm) document.getElementById('bpm').value = s.bpm;
+  if (s.voice && VOICES[s.voice]) document.getElementById('voice').value = s.voice;
+  if (s.tsig) document.getElementById('tsig').value = s.tsig;
+  document.getElementById('sheetname').value = name;
+  renderSheet();
+}
+function deleteSaved() {
+  const name = document.getElementById('saved').value;
+  if (!name) return;
+  if (!confirm('Delete saved sheet "' + name + '"?')) return;
+  const store = getStore();
+  delete store[name];
+  localStorage.setItem(LS_KEY, JSON.stringify(store));
+  refreshSavedList();
+}
+function downloadSheet() {
+  const name = (document.getElementById('sheetname').value.trim() || 'sheet');
+  const data = { name, bpm: getBpm(), voice: document.getElementById('voice').value, tsig: document.getElementById('tsig').value, text: document.getElementById('sheetin').value };
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name.replace(/[^\w-]+/g, '_') + '.piano.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function loadFile(ev) {
+  const file = ev.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let text = reader.result;
+    if (/<score-(partwise|timewise)/.test(text)) {
+      try {
+        document.getElementById('sheetin').value = importMusicXML(text);
+        document.getElementById('sheetname').value = file.name.replace(/\.(xml|musicxml)$/i, '');
+        renderSheet();
+      } catch (e) { alert('Could not import MusicXML: ' + e.message); }
+      return;
+    }
+    try {
+      const data = JSON.parse(text);
+      if (data && data.text) {
+        text = data.text;
+        if (data.bpm) document.getElementById('bpm').value = data.bpm;
+        if (data.voice && VOICES[data.voice]) document.getElementById('voice').value = data.voice;
+        if (data.tsig) document.getElementById('tsig').value = data.tsig;
+        if (data.name) document.getElementById('sheetname').value = data.name;
+      }
+    } catch (e) { /* plain text sheet */ }
+    document.getElementById('sheetin').value = text;
+    renderSheet();
+  };
+  reader.readAsText(file);
+  ev.target.value = '';
+}
+
+// ---------- Keyboard ----------
+const kb = document.getElementById('kb');
+const WHITE = ['C', 'D', 'E', 'F', 'G', 'A', 'B'];
+const BLACK_AFTER = { C: 'C#', D: 'D#', F: 'F#', G: 'G#', A: 'A#' };
+const keyEls = {};
+let whiteIndex = 0;
+for (let oct = 3; oct <= 5; oct++) {
+  WHITE.forEach(w => {
+    const midi = noteToMidi(w + oct);
+    const el = document.createElement('div');
+    el.className = 'white';
+    el.innerHTML = '<span>' + w + oct + '</span>';
+    el.onmousedown = () => playMidi(midi);
+    kb.appendChild(el);
+    keyEls[midi] = el;
+    if (BLACK_AFTER[w]) {
+      const bmidi = noteToMidi(BLACK_AFTER[w] + oct);
+      const b = document.createElement('div');
+      b.className = 'black';
+      b.style.left = ((whiteIndex + 1) * 46) + 'px';
+      b.onmousedown = (e) => { e.stopPropagation(); playMidi(bmidi); };
+      kb.appendChild(b);
+      keyEls[bmidi] = b;
+    }
+    whiteIndex++;
+  });
+}
+
+function flashKey(m, hand, finger) {
+  const el = keyEls[m];
+  if (!el) return;
+  const cls = hand === 'L' ? 'on-l' : 'on';
+  el.classList.add(cls);
+  if (finger) {
+    const badge = document.createElement('div');
+    badge.className = 'fingerbadge' + (hand === 'L' ? ' lh' : '');
+    badge.textContent = finger;
+    el.appendChild(badge);
+    setTimeout(() => badge.remove(), 400);
+  }
+  setTimeout(() => el.classList.remove(cls), 250);
+}
+
+// Computer keyboard: middle octave (4)
+const KEYMAP = { a:'C4', w:'C#4', s:'D4', e:'D#4', d:'E4', f:'F4', t:'F#4', g:'G4', y:'G#4', h:'A4', u:'A#4', j:'B4', k:'C5' };
+const held = {};
+window.addEventListener('keydown', ev => {
+  if (ev.target.tagName === 'INPUT' || ev.target.tagName === 'TEXTAREA') return;
+  const n = KEYMAP[ev.key];
+  if (n && !held[ev.key]) { held[ev.key] = true; const m = noteToMidi(n); playMidi(m); flashKey(m); }
+});
+window.addEventListener('keyup', ev => { delete held[ev.key]; });
+
+refreshSavedList();
+renderSheet();
+</script>
+</body>
+</html>
